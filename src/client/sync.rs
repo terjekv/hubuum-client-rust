@@ -166,7 +166,7 @@ impl Client<Authenticated> {
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
         let endpoint = resource.endpoint();
-        let url = format!("{}/{}", self.build_url(&endpoint), id);
+        let url = format!("{}{}", self.build_url(&endpoint), id);
 
         trace!("PATCH {} with {:?}", &url, params);
 
