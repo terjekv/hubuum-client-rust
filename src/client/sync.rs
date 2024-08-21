@@ -1,4 +1,4 @@
-use log::trace;
+use log::{error, trace};
 use reqwest::blocking::Response;
 use serde_json::Value;
 use serde_urlencoded;
@@ -7,8 +7,7 @@ use std::marker::PhantomData;
 use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated};
 use crate::endpoints::Endpoint;
 use crate::errors::ApiError;
-use crate::resources::ApiResource;
-use crate::resources::{Class, User};
+use crate::resources::{ApiResource, Class, Group, Namespace, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
 
 #[derive(Debug, Clone)]
@@ -131,7 +130,19 @@ impl Client<Authenticated> {
         let response = self.check_success(response)?;
 
         trace!("Response: {:?}", response);
-        let obj: Vec<R::GetOutput> = response.json()?;
+
+        let response_text = response.text()?;
+        let obj: Vec<R::GetOutput> = match serde_json::from_str(&response_text) {
+            Ok(obj) => obj,
+            Err(err) => {
+                error!(
+                    "Failed to deserialize response: {}\nResponse text: {}",
+                    err, response_text
+                );
+                return Err(ApiError::DeserializationError(response_text));
+            }
+        };
+
         Ok(obj)
     }
 
@@ -155,7 +166,18 @@ impl Client<Authenticated> {
         let response = self.check_success(response)?;
 
         trace!("Response: {:?}", response);
-        let obj: R::PostOutput = response.json()?;
+        let response_text = response.text()?;
+        let obj: R::PostOutput = match serde_json::from_str(&response_text) {
+            Ok(obj) => obj,
+            Err(err) => {
+                error!(
+                    "Failed to deserialize response: {}\nResponse text: {}",
+                    err, response_text
+                );
+                return Err(ApiError::DeserializationError(response_text));
+            }
+        };
+
         Ok(obj)
     }
 
@@ -177,10 +199,18 @@ impl Client<Authenticated> {
             .json(&params)
             .send()?;
 
-        let response = self.check_success(response)?;
-
         trace!("Response: {:?}", response);
-        let obj: R::PatchOutput = response.json()?;
+        let response_text = response.text()?;
+        let obj: R::PatchOutput = match serde_json::from_str(&response_text) {
+            Ok(obj) => obj,
+            Err(err) => {
+                error!(
+                    "Failed to deserialize response: {}\nResponse text: {}",
+                    err, response_text
+                );
+                return Err(ApiError::DeserializationError(response_text));
+            }
+        };
         Ok(obj)
     }
 
@@ -209,6 +239,14 @@ impl Client<Authenticated> {
     pub fn classes(&self) -> Resource<Class> {
         Resource::new(self.clone())
     }
+
+    pub fn namespaces(&self) -> Resource<Namespace> {
+        Resource::new(self.clone())
+    }
+
+    pub fn groups(&self) -> Resource<Group> {
+        Resource::new(self.clone())
+    }
 }
 
 pub struct FilterBuilder<T: ApiResource> {
@@ -234,7 +272,9 @@ impl<T: ApiResource> FilterBuilder<T> {
 
     pub fn execute(self) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = T::build_params(self.filters);
-        self.client.get::<T>(T::default(), params)
+        let res = self.client.get::<T>(T::default(), params);
+        println!("{:?}", res);
+        res
     }
 }
 

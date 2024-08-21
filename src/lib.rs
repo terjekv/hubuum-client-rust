@@ -36,5 +36,5 @@ mod endpoints;
 // Re-export commonly used items
 pub use client::{AsyncClient, Authenticated, IntoResourceFilter, SyncClient, Unauthenticated};
 pub use errors::ApiError;
-pub use resources::{Class, ClassGet, ClassPatch, ClassPost, User, UserGet, UserPatch, UserPost};
+pub use resources::*;
 pub use types::{BaseUrl, ClassParams, Credentials, Token, UserParams};

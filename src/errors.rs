@@ -32,4 +32,7 @@ pub enum ApiError {
 
     #[error("HTTP error {status}: {message}")]
     HttpWithBody { status: StatusCode, message: String },
+
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
 }

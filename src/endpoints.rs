@@ -4,7 +4,9 @@ pub enum Endpoint {
     Login,
     LoginWithToken,
     GetUser,
+    GetGroup,
     GetClass,
+    GetNamespace,
     // ... other endpoints
 }
 
@@ -14,7 +16,9 @@ impl Endpoint {
             Endpoint::Login => "/api/v0/auth/login",
             Endpoint::LoginWithToken => "/api/v0/auth/validate",
             Endpoint::GetUser => "/api/v1/iam/users/",
+            Endpoint::GetGroup => "/api/v1/iam/groups/",
             Endpoint::GetClass => "/api/v1/classes/",
+            Endpoint::GetNamespace => "/api/v1/namespaces/",
             // ... other endpoints
         }
     }
