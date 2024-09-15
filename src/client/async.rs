@@ -8,6 +8,7 @@ use crate::errors::ApiError;
 use crate::resources::ApiResource;
 use crate::resources::{Class, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
+use crate::QueryFilter;
 
 #[derive(Debug, Clone)]
 pub struct Client<S> {
@@ -94,6 +95,31 @@ impl Client<Authenticated> {
         } else {
             url
         };
+
+        trace!("GET {}", url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.state.token))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        trace!("Response: {:?}", response);
+        let obj: Vec<R::GetOutput> = response.json().await?;
+        Ok(obj)
+    }
+
+    pub async fn search<R: ApiResource>(
+        &self,
+        resource: R,
+        params: Vec<QueryFilter>,
+    ) -> Result<Vec<R::GetOutput>, ApiError> {
+        let endpoint = resource.endpoint();
+        let params = serde_urlencoded::to_string(&params)?;
+
+        let url = format!("{}?{}", self.build_url(&endpoint), params);
 
         trace!("GET {}", url);
 
@@ -214,7 +240,7 @@ impl<T: ApiResource> FilterBuilder<T> {
 
     pub async fn execute(self) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = T::build_params(self.filters);
-        self.client.get::<T>(T::default(), params).await
+        self.client.search::<T>(T::default(), params).await
     }
 }
 
@@ -240,7 +266,7 @@ impl<T: ApiResource> Resource<T> {
         filter: F,
     ) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = filter.into_resource_filter();
-        self.client.get::<T>(T::default(), params).await
+        self.client.search::<T>(T::default(), params).await
     }
 
     pub async fn create(&self, params: T::PostParams) -> Result<T::PostOutput, ApiError> {

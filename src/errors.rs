@@ -35,4 +35,7 @@ pub enum ApiError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
+
+    #[error("Unsupported HTTP operation: {0}")]
+    UnsupportedHttpOperation(String),
 }

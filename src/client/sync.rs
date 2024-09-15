@@ -1,7 +1,7 @@
 use log::{error, trace};
 use reqwest::blocking::Response;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use serde_urlencoded;
 use std::marker::PhantomData;
 
 use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated};
@@ -9,6 +9,7 @@ use crate::endpoints::Endpoint;
 use crate::errors::ApiError;
 use crate::resources::{ApiResource, Class, Group, Namespace, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
+use crate::QueryFilter;
 
 #[derive(Debug, Clone)]
 pub struct Client<S> {
@@ -103,36 +104,51 @@ impl Client<Authenticated> {
         &self.state.token
     }
 
-    pub fn get<R: ApiResource>(
+    pub fn request<R: ApiResource, T: Serialize + std::fmt::Debug, U: DeserializeOwned>(
         &self,
+        method: reqwest::Method,
         resource: R,
-        params: R::GetParams,
-    ) -> Result<Vec<R::GetOutput>, ApiError> {
-        // Change the return type to Vec
+        params: T,
+    ) -> Result<U, ApiError> {
         let endpoint = resource.endpoint();
         let url = self.build_url(&endpoint);
 
-        let query = serde_urlencoded::to_string(&params)?;
-        let url = if !query.is_empty() {
-            format!("{}?{}", url, query)
-        } else {
-            url
-        };
+        let request = match method {
+            // This is a horrible hack as we have no other traits to work with.
+            reqwest::Method::GET => {
+                let query = format!("{:?}", params);
+                let query = query.strip_prefix('"').unwrap();
+                let query = query.strip_suffix('"').unwrap();
+                let url = if !query.is_empty() {
+                    format!("{}?{}", url, query)
+                } else {
+                    url
+                };
+                trace!("GET {}", url);
+                self.http_client.get(&url)
+            }
+            reqwest::Method::POST => {
+                trace!("POST {} with {:?}", &url, params);
+                self.http_client.post(&url).json(&params)
+            }
+            reqwest::Method::PATCH => {
+                trace!("PATCH {} with {:?}", &url, params);
+                self.http_client.patch(&url).json(&params)
+            }
+            reqwest::Method::DELETE => {
+                trace!("DELETE {}", &url);
+                self.http_client.delete(&url)
+            }
+            _ => return Err(ApiError::UnsupportedHttpOperation(method.to_string())),
+        }
+        .header("Authorization", format!("Bearer {}", self.state.token));
 
-        trace!("GET {}", url);
-
-        let response = self
-            .http_client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.state.token))
-            .send()?;
-
-        let response = self.check_success(response)?;
-
-        trace!("Response: {:?}", response);
-
-        let response_text = response.text()?;
-        let obj: Vec<R::GetOutput> = match serde_json::from_str(&response_text) {
+        let now = std::time::Instant::now();
+        let response = request.send()?;
+        trace!("Request took {:?}", now.elapsed());
+        let response_text = self.check_success(response)?.text()?;
+        trace!("Response: {}", response_text);
+        let obj: U = match serde_json::from_str(&response_text) {
             Ok(obj) => obj,
             Err(err) => {
                 error!(
@@ -146,39 +162,29 @@ impl Client<Authenticated> {
         Ok(obj)
     }
 
+    pub fn get<R: ApiResource>(
+        &self,
+        resource: R,
+        params: R::GetParams,
+    ) -> Result<Vec<R::GetOutput>, ApiError> {
+        self.request(reqwest::Method::GET, resource, params)
+    }
+
+    pub fn search<R: ApiResource>(
+        &self,
+        resource: R,
+        params: Vec<QueryFilter>,
+    ) -> Result<Vec<R::GetOutput>, ApiError> {
+        use crate::types::IntoQueryTuples;
+        self.request(reqwest::Method::GET, resource, params.into_query_string())
+    }
+
     pub fn post<R: ApiResource>(
         &self,
         resource: R,
         params: R::PostParams,
     ) -> Result<R::PostOutput, ApiError> {
-        let endpoint = resource.endpoint();
-        let url = self.build_url(&endpoint);
-
-        trace!("POST {} with {:?}", &url, params);
-
-        let response = self
-            .http_client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.state.token))
-            .json(&params)
-            .send()?;
-
-        let response = self.check_success(response)?;
-
-        trace!("Response: {:?}", response);
-        let response_text = response.text()?;
-        let obj: R::PostOutput = match serde_json::from_str(&response_text) {
-            Ok(obj) => obj,
-            Err(err) => {
-                error!(
-                    "Failed to deserialize response: {}\nResponse text: {}",
-                    err, response_text
-                );
-                return Err(ApiError::DeserializationError(response_text));
-            }
-        };
-
-        Ok(obj)
+        self.request(reqwest::Method::POST, resource, params)
     }
 
     pub fn patch<R: ApiResource>(
@@ -187,49 +193,12 @@ impl Client<Authenticated> {
         id: i32,
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
-        let endpoint = resource.endpoint();
-        let url = format!("{}{}", self.build_url(&endpoint), id);
-
-        trace!("PATCH {} with {:?}", &url, params);
-
-        let response = self
-            .http_client
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.state.token))
-            .json(&params)
-            .send()?;
-
-        trace!("Response: {:?}", response);
-        let response_text = response.text()?;
-        let obj: R::PatchOutput = match serde_json::from_str(&response_text) {
-            Ok(obj) => obj,
-            Err(err) => {
-                error!(
-                    "Failed to deserialize response: {}\nResponse text: {}",
-                    err, response_text
-                );
-                return Err(ApiError::DeserializationError(response_text));
-            }
-        };
-        Ok(obj)
+        self.request(reqwest::Method::PATCH, resource, (id, params))
     }
 
     pub fn delete<R: ApiResource>(&self, resource: R, id: i32) -> Result<(), ApiError> {
-        let endpoint = resource.endpoint();
-        let url = format!("{}{}", self.build_url(&endpoint), id);
-
-        trace!("DELETE {}", &url);
-
-        let response = self
-            .http_client
-            .delete(&url)
-            .header("Authorization", format!("Bearer {}", self.state.token))
-            .send()?;
-
-        let response = self.check_success(response)?;
-
-        trace!("Response: {:?}", response);
-        Ok(())
+        self.request(reqwest::Method::DELETE, resource, id)
+            .map(|_: ()| ())
     }
 
     pub fn users(&self) -> Resource<User> {
@@ -270,10 +239,13 @@ impl<T: ApiResource> FilterBuilder<T> {
         self
     }
 
+    pub fn add_filter_name_exact<V: ToString>(self, value: V) -> Self {
+        self.add_filter("name", FilterOperator::Equals { is_negated: false }, value)
+    }
+
     pub fn execute(self) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = T::build_params(self.filters);
-        let res = self.client.get::<T>(T::default(), params);
-        println!("{:?}", res);
+        let res = self.client.search::<T>(T::default(), params);
         res
     }
 }
@@ -294,12 +266,13 @@ impl<T: ApiResource> Resource<T> {
     pub fn find(&self) -> FilterBuilder<T> {
         FilterBuilder::new(self.client.clone())
     }
-    pub fn filter<F: IntoResourceFilter<T>>(
+
+    pub fn filter(
         &self,
-        filter: F,
+        filter: impl IntoResourceFilter<T>,
     ) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = filter.into_resource_filter();
-        self.client.get::<T>(T::default(), params)
+        self.client.search::<T>(T::default(), params)
     }
 
     pub fn create(&self, params: T::PostParams) -> Result<T::PostOutput, ApiError> {

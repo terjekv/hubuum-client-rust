@@ -75,6 +75,12 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
             }
         }
 
+        impl std::fmt::Display for #name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.id)
+            }
+        }
+
         impl crate::resources::ApiResource for #name {
             type GetParams = #get_name;
             type GetOutput = #name;
@@ -89,15 +95,16 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
                 crate::endpoints::Endpoint::#endpoint
             }
 
-            fn build_params(filters: Vec<(String, crate::types::FilterOperator, String)>) -> Self::GetParams {
-                let mut params = #get_name::default();
+            fn build_params(filters: Vec<(String, crate::types::FilterOperator, String)>) -> Vec<crate::types::QueryFilter> {
+                let mut queries = vec![];
                 for (field, op, value) in filters {
-                    match (field.as_str(), op) {
-                        // Add filter logic here
-                        _ => {}
-                    }
+                    let key = format!("{}__{}", field, op);
+                    queries.push(crate::types::QueryFilter {
+                        key,
+                        value,
+                    });
                 }
-                params
+                queries
             }
         }
     };
@@ -166,6 +173,28 @@ fn process_fields(
             false
         });
 
+        let is_as_id = field.attrs.iter().any(|attr| {
+            if attr.path().is_ident("api") {
+                if let Meta::List(list) = &attr.meta {
+                    if let Ok(nested) =
+                        list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+                    {
+                        return nested.iter().any(
+                            |meta| matches!(meta, Meta::Path(path) if path.is_ident("as_id")),
+                        );
+                    }
+                }
+            }
+            false
+        });
+
+        let id_field_name = if is_as_id {
+            format!("{}_id", name.as_ref().unwrap().to_string())
+        } else {
+            name.as_ref().unwrap().to_string()
+        };
+        let id_field_ident = syn::Ident::new(&id_field_name, proc_macro2::Span::call_site());
+
         if !is_post_only {
             if is_optional {
                 main_fields.extend(quote! {
@@ -175,18 +204,27 @@ fn process_fields(
             } else {
                 main_fields.extend(quote! { pub #name: #ty, });
             }
-            get_fields.extend(quote! { pub #name: Option<#ty>, });
+            get_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
         }
 
         if is_post_only {
-            post_fields.extend(quote! { pub #name: #ty, });
+            post_fields.extend(quote! { pub #id_field_ident: #ty, });
         } else if !is_read_only {
-            patch_fields.extend(quote! { pub #name: Option<#ty>, });
-
-            if !is_optional {
-                post_fields.extend(quote! { pub #name: #ty, });
+            if is_as_id {
+                let id_type = if is_optional {
+                    quote!(Option<i32>)
+                } else {
+                    quote!(i32)
+                };
+                patch_fields.extend(quote! { pub #id_field_ident: #id_type, });
+                post_fields.extend(quote! { pub #id_field_ident: #id_type, });
             } else {
-                post_fields.extend(quote! { pub #name: Option<#ty>, });
+                patch_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
+                if !is_optional {
+                    post_fields.extend(quote! { pub #id_field_ident: #ty, });
+                } else {
+                    post_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
+                }
             }
         }
     }

@@ -12,7 +12,7 @@ pub use self::class::{Class, ClassGet, ClassPatch, ClassPost};
 pub use self::group::{Group, GroupGet, GroupPatch, GroupPost};
 pub use self::namespace::{Namespace, NamespaceGet, NamespacePatch, NamespacePost};
 pub use self::user::{User, UserGet, UserPatch, UserPost};
-pub use crate::types::FilterOperator;
+pub use crate::types::{FilterOperator, QueryFilter};
 
 use crate::endpoints::Endpoint;
 
@@ -28,5 +28,5 @@ pub trait ApiResource: Default {
     type DeleteOutput: DeserializeOwned + Debug;
 
     fn endpoint(&self) -> Endpoint;
-    fn build_params(filters: Vec<(String, FilterOperator, String)>) -> Self::GetParams;
+    fn build_params(filters: Vec<(String, FilterOperator, String)>) -> Vec<QueryFilter>;
 }

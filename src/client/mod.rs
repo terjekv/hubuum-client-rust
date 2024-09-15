@@ -1,4 +1,5 @@
 use crate::endpoints::Endpoint;
+use crate::QueryFilter;
 
 pub mod r#async;
 pub mod sync;
@@ -13,7 +14,7 @@ trait ClientCore {
 }
 
 pub trait IntoResourceFilter<T: ApiResource> {
-    fn into_resource_filter(self) -> T::GetParams;
+    fn into_resource_filter(self) -> Vec<QueryFilter>;
 }
 
 #[derive(Debug, Clone)]
