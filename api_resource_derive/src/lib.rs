@@ -21,6 +21,15 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields, Meta};
 use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
+fn pluralize(name: &syn::Ident) -> String {
+    let name = name.to_string();
+    let last_char = name.chars().last().unwrap();
+    match last_char {
+        's' => format!("{}es", name),
+        _ => format!("{}s", name),
+    }
+}
+
 #[proc_macro_derive(ApiResource, attributes(endpoint, api))]
 pub fn api_resource_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -31,6 +40,7 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
         panic!("ApiResource only supports structs with names ending in 'Resource'");
     }
     let name = format_ident!("{}", base_name.trim_end_matches("Resource"));
+    let plural_name = format_ident!("{}", pluralize(&name));
 
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -45,7 +55,7 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
     let get_name = format_ident!("{}Get", name);
     let post_name = format_ident!("{}Post", name);
     let patch_name = format_ident!("{}Patch", name);
-    let endpoint = format_ident!("Get{}", name);
+    let endpoint = format_ident!("{}", plural_name);
 
     let expanded = quote! {
         #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, tabled::Tabled)]

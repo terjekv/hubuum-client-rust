@@ -1,6 +1,6 @@
 use log::{error, trace};
 use reqwest::blocking::Response;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::marker::PhantomData;
 
@@ -10,6 +10,9 @@ use crate::errors::ApiError;
 use crate::resources::{ApiResource, Class, Group, Namespace, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
 use crate::QueryFilter;
+
+#[derive(Deserialize, Debug)]
+struct DeleteResponse;
 
 #[derive(Debug, Clone)]
 pub struct Client<S> {
@@ -109,7 +112,7 @@ impl Client<Authenticated> {
         method: reqwest::Method,
         resource: R,
         params: T,
-    ) -> Result<U, ApiError> {
+    ) -> Result<Option<U>, ApiError> {
         let endpoint = resource.endpoint();
         let url = self.build_url(&endpoint);
 
@@ -136,6 +139,7 @@ impl Client<Authenticated> {
                 self.http_client.patch(&url).json(&params)
             }
             reqwest::Method::DELETE => {
+                let url = format!("{}{:?}", url, params);
                 trace!("DELETE {}", &url);
                 self.http_client.delete(&url)
             }
@@ -148,18 +152,28 @@ impl Client<Authenticated> {
         trace!("Request took {:?}", now.elapsed());
         let response_text = self.check_success(response)?.text()?;
         trace!("Response: {}", response_text);
+
+        if method == reqwest::Method::DELETE {
+            if response_text.is_empty() {
+                return Ok(None);
+            } else {
+                error!("Expected empty response, got: {}", response_text);
+                return Err(ApiError::DeserializationError(response_text));
+            }
+        }
+
         let obj: U = match serde_json::from_str(&response_text) {
             Ok(obj) => obj,
             Err(err) => {
                 error!(
-                    "Failed to deserialize response: {}\nResponse text: {}",
+                    "Failed to deserialize response: {} Response text: {}",
                     err, response_text
                 );
                 return Err(ApiError::DeserializationError(response_text));
             }
         };
 
-        Ok(obj)
+        Ok(Some(obj))
     }
 
     pub fn get<R: ApiResource>(
@@ -168,6 +182,7 @@ impl Client<Authenticated> {
         params: R::GetParams,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
         self.request(reqwest::Method::GET, resource, params)
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
     }
 
     pub fn search<R: ApiResource>(
@@ -177,6 +192,7 @@ impl Client<Authenticated> {
     ) -> Result<Vec<R::GetOutput>, ApiError> {
         use crate::types::IntoQueryTuples;
         self.request(reqwest::Method::GET, resource, params.into_query_string())
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
     }
 
     pub fn post<R: ApiResource>(
@@ -185,6 +201,7 @@ impl Client<Authenticated> {
         params: R::PostParams,
     ) -> Result<R::PostOutput, ApiError> {
         self.request(reqwest::Method::POST, resource, params)
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
     }
 
     pub fn patch<R: ApiResource>(
@@ -194,11 +211,12 @@ impl Client<Authenticated> {
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
         self.request(reqwest::Method::PATCH, resource, (id, params))
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
     }
 
     pub fn delete<R: ApiResource>(&self, resource: R, id: i32) -> Result<(), ApiError> {
-        self.request(reqwest::Method::DELETE, resource, id)
-            .map(|_: ()| ())
+        self.request::<_, _, DeleteResponse>(reqwest::Method::DELETE, resource, id)
+            .map(|_| ())
     }
 
     pub fn users(&self) -> Resource<User> {
@@ -296,11 +314,11 @@ mod test {
 
     #[parameterized(
         login_foo = { "https://foo.bar.com", Endpoint::Login },
-        get_user_foo = { "https://foo.bar.com", Endpoint::GetUser },
-        get_class_foo = { "https://foo.bar.com", Endpoint::GetClass },
+        get_user_foo = { "https://foo.bar.com", Endpoint::Users },
+        get_class_foo = { "https://foo.bar.com", Endpoint::Classes },
         login_bar = { "https://bar.baz.com", Endpoint::Login },
-        get_user_bar = { "https://bar.baz.com", Endpoint::GetUser },
-        get_class_bar = { "https://bar.baz.com", Endpoint::GetClass }
+        get_user_bar = { "https://bar.baz.com", Endpoint::Users },
+        get_class_bar = { "https://bar.baz.com", Endpoint::Classes }
 
     )]
 
