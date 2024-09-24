@@ -2,6 +2,7 @@ use log::{error, trace};
 use reqwest::blocking::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
+use std::any::type_name;
 use std::marker::PhantomData;
 
 use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated};
@@ -13,6 +14,9 @@ use crate::QueryFilter;
 
 #[derive(Deserialize, Debug)]
 struct DeleteResponse;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EmptyPostParams;
 
 #[derive(Debug, Clone)]
 pub struct Client<S> {
@@ -111,17 +115,16 @@ impl Client<Authenticated> {
         &self,
         method: reqwest::Method,
         resource: R,
-        params: T,
+        query_params: Vec<QueryFilter>,
+        post_params: T,
     ) -> Result<Option<U>, ApiError> {
         let endpoint = resource.endpoint();
         let url = self.build_url(&endpoint);
 
         let request = match method {
-            // This is a horrible hack as we have no other traits to work with.
             reqwest::Method::GET => {
-                let query = format!("{:?}", params);
-                let query = query.strip_prefix('"').unwrap();
-                let query = query.strip_suffix('"').unwrap();
+                use crate::types::IntoQueryTuples;
+                let query = query_params.into_query_string();
                 let url = if !query.is_empty() {
                     format!("{}?{}", url, query)
                 } else {
@@ -131,15 +134,15 @@ impl Client<Authenticated> {
                 self.http_client.get(&url)
             }
             reqwest::Method::POST => {
-                trace!("POST {} with {:?}", &url, params);
-                self.http_client.post(&url).json(&params)
+                trace!("POST {} with {:?}", &url, post_params);
+                self.http_client.post(&url).json(&post_params)
             }
             reqwest::Method::PATCH => {
-                trace!("PATCH {} with {:?}", &url, params);
-                self.http_client.patch(&url).json(&params)
+                trace!("PATCH {} with {:?}", &url, post_params);
+                self.http_client.patch(&url).json(&post_params)
             }
             reqwest::Method::DELETE => {
-                let url = format!("{}{:?}", url, params);
+                let url = format!("{}{:?}", url, post_params);
                 trace!("DELETE {}", &url);
                 self.http_client.delete(&url)
             }
@@ -179,20 +182,25 @@ impl Client<Authenticated> {
     pub fn get<R: ApiResource>(
         &self,
         resource: R,
+        query_params: Vec<QueryFilter>,
         params: R::GetParams,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
-        self.request(reqwest::Method::GET, resource, params)
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
+        self.request(reqwest::Method::GET, resource, query_params, params)
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("GET returned empty result".into())))
     }
 
     pub fn search<R: ApiResource>(
         &self,
         resource: R,
-        params: Vec<QueryFilter>,
+        query_params: Vec<QueryFilter>,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
-        use crate::types::IntoQueryTuples;
-        self.request(reqwest::Method::GET, resource, params.into_query_string())
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
+        self.request(
+            reqwest::Method::GET,
+            resource,
+            query_params,
+            EmptyPostParams,
+        )
+        .and_then(|opt| opt.ok_or(ApiError::EmptyResult("SEARCH returned empty result".into())))
     }
 
     pub fn post<R: ApiResource>(
@@ -200,8 +208,8 @@ impl Client<Authenticated> {
         resource: R,
         params: R::PostParams,
     ) -> Result<R::PostOutput, ApiError> {
-        self.request(reqwest::Method::POST, resource, params)
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
+        self.request(reqwest::Method::POST, resource, vec![], params)
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("POST returned empty result".into())))
     }
 
     pub fn patch<R: ApiResource>(
@@ -210,12 +218,12 @@ impl Client<Authenticated> {
         id: i32,
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
-        self.request(reqwest::Method::PATCH, resource, (id, params))
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult))
+        self.request(reqwest::Method::PATCH, resource, vec![], (id, params))
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("PATCH returned empty result".into())))
     }
 
     pub fn delete<R: ApiResource>(&self, resource: R, id: i32) -> Result<(), ApiError> {
-        self.request::<_, _, DeleteResponse>(reqwest::Method::DELETE, resource, id)
+        self.request::<_, _, DeleteResponse>(reqwest::Method::DELETE, resource, vec![], id)
             .map(|_| ())
     }
 
@@ -261,10 +269,13 @@ impl<T: ApiResource> FilterBuilder<T> {
         self.add_filter("name", FilterOperator::Equals { is_negated: false }, value)
     }
 
+    pub fn execute_expecting_single_result(self) -> Result<T::GetOutput, ApiError> {
+        one_or_err(self.execute()?)
+    }
+
     pub fn execute(self) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = T::build_params(self.filters);
-        let res = self.client.search::<T>(T::default(), params);
-        res
+        self.client.search::<T>(T::default(), params)
     }
 }
 
@@ -293,6 +304,14 @@ impl<T: ApiResource> Resource<T> {
         self.client.search::<T>(T::default(), params)
     }
 
+    pub fn filter_expecting_single_result(
+        &self,
+        filter: impl IntoResourceFilter<T>,
+    ) -> Result<T::GetOutput, ApiError> {
+        let params = filter.into_resource_filter();
+        one_or_err(self.client.search::<T>(T::default(), params)?)
+    }
+
     pub fn create(&self, params: T::PostParams) -> Result<T::PostOutput, ApiError> {
         self.client.post::<T>(T::default(), params)
     }
@@ -303,6 +322,23 @@ impl<T: ApiResource> Resource<T> {
 
     pub fn delete(&self, id: i32) -> Result<(), ApiError> {
         self.client.delete::<T>(T::default(), id)
+    }
+}
+
+fn one_or_err<T>(mut v: Vec<T>) -> Result<T, ApiError> {
+    let name = type_name::<T>();
+    let name = name.rsplit("::").next().unwrap_or(name);
+
+    if v.len() == 1 {
+        Ok(v.pop().unwrap())
+    } else if v.is_empty() {
+        Err(ApiError::EmptyResult(format!("{} not found", name)))
+    } else {
+        Err(ApiError::TooManyResults(format!(
+            "Type: {}, Count: {} (expected 1)",
+            name,
+            v.len()
+        )))
     }
 }
 

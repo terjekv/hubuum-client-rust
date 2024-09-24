@@ -39,6 +39,9 @@ pub enum ApiError {
     #[error("Unsupported HTTP operation: {0}")]
     UnsupportedHttpOperation(String),
 
-    #[error("Unexpected empty result")]
-    EmptyResult,
+    #[error("Unexpected empty result: {0}")]
+    EmptyResult(String),
+
+    #[error("Too many results: {0}")]
+    TooManyResults(String),
 }
