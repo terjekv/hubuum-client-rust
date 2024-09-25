@@ -325,6 +325,14 @@ impl<T: ApiResource> Resource<T> {
     }
 }
 
+impl Resource<Class> {
+    pub fn get_by_name(&self, name: &str) -> Result<Class, ApiError> {
+        self.find()
+            .add_filter_name_exact(name)
+            .execute_expecting_single_result()
+    }
+}
+
 fn one_or_err<T>(mut v: Vec<T>) -> Result<T, ApiError> {
     let name = type_name::<T>();
     let name = name.rsplit("::").next().unwrap_or(name);
