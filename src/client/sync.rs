@@ -3,12 +3,13 @@ use reqwest::blocking::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::any::type_name;
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated};
+use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated, UrlParams};
 use crate::endpoints::Endpoint;
 use crate::errors::ApiError;
-use crate::resources::{ApiResource, Class, Group, Namespace, User};
+use crate::resources::{ApiResource, Class, ClassRelation, Group, Namespace, Object, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
 use crate::QueryFilter;
 
@@ -26,12 +27,17 @@ pub struct Client<S> {
 }
 
 impl<S> ClientCore for Client<S> {
-    fn build_url(&self, endpoint: &Endpoint) -> String {
-        format!(
+    fn build_url(&self, endpoint: &Endpoint, url_params: UrlParams) -> String {
+        let mut url = format!(
             "{}{}",
             self.base_url.with_trailing_slash(),
             endpoint.trim_start_matches('/')
-        )
+        );
+
+        for (key, value) in url_params {
+            url = url.replace(&format!("{{{}}}", key), value.as_ref());
+        }
+        url
     }
 }
 
@@ -74,7 +80,7 @@ impl Client<Unauthenticated> {
     pub fn login(self, credentials: Credentials) -> Result<Client<Authenticated>, ApiError> {
         let token: Token = self
             .http_client
-            .post(&self.build_url(&Endpoint::Login))
+            .post(&self.build_url(&Endpoint::Login, UrlParams::default()))
             .json(&credentials)
             .send()?
             .error_for_status()?
@@ -90,7 +96,7 @@ impl Client<Unauthenticated> {
     pub fn login_with_token(self, token: Token) -> Result<Client<Authenticated>, ApiError> {
         let status = self
             .http_client
-            .get(self.build_url(&Endpoint::LoginWithToken))
+            .get(self.build_url(&Endpoint::LoginWithToken, UrlParams::default()))
             .header("Authorization", format!("Bearer {}", token.token))
             .send()?;
 
@@ -115,11 +121,12 @@ impl Client<Authenticated> {
         &self,
         method: reqwest::Method,
         resource: R,
+        url_params: UrlParams,
         query_params: Vec<QueryFilter>,
         post_params: T,
     ) -> Result<Option<U>, ApiError> {
         let endpoint = resource.endpoint();
-        let url = self.build_url(&endpoint);
+        let url = self.build_url(&endpoint, url_params);
 
         let request = match method {
             reqwest::Method::GET => {
@@ -182,21 +189,30 @@ impl Client<Authenticated> {
     pub fn get<R: ApiResource>(
         &self,
         resource: R,
+        url_params: UrlParams,
         query_params: Vec<QueryFilter>,
         params: R::GetParams,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
-        self.request(reqwest::Method::GET, resource, query_params, params)
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("GET returned empty result".into())))
+        self.request(
+            reqwest::Method::GET,
+            resource,
+            url_params,
+            query_params,
+            params,
+        )
+        .and_then(|opt| opt.ok_or(ApiError::EmptyResult("GET returned empty result".into())))
     }
 
     pub fn search<R: ApiResource>(
         &self,
         resource: R,
+        url_params: UrlParams,
         query_params: Vec<QueryFilter>,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
         self.request(
             reqwest::Method::GET,
             resource,
+            url_params,
             query_params,
             EmptyPostParams,
         )
@@ -206,9 +222,10 @@ impl Client<Authenticated> {
     pub fn post<R: ApiResource>(
         &self,
         resource: R,
+        url_params: UrlParams,
         params: R::PostParams,
     ) -> Result<R::PostOutput, ApiError> {
-        self.request(reqwest::Method::POST, resource, vec![], params)
+        self.request(reqwest::Method::POST, resource, url_params, vec![], params)
             .and_then(|opt| opt.ok_or(ApiError::EmptyResult("POST returned empty result".into())))
     }
 
@@ -216,44 +233,72 @@ impl Client<Authenticated> {
         &self,
         resource: R,
         id: i32,
+        url_params: UrlParams,
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
-        self.request(reqwest::Method::PATCH, resource, vec![], (id, params))
-            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("PATCH returned empty result".into())))
+        self.request(
+            reqwest::Method::PATCH,
+            resource,
+            url_params,
+            vec![],
+            (id, params),
+        )
+        .and_then(|opt| opt.ok_or(ApiError::EmptyResult("PATCH returned empty result".into())))
     }
 
-    pub fn delete<R: ApiResource>(&self, resource: R, id: i32) -> Result<(), ApiError> {
-        self.request::<_, _, DeleteResponse>(reqwest::Method::DELETE, resource, vec![], id)
-            .map(|_| ())
+    pub fn delete<R: ApiResource>(
+        &self,
+        resource: R,
+        id: i32,
+        url_params: UrlParams,
+    ) -> Result<(), ApiError> {
+        self.request::<_, _, DeleteResponse>(
+            reqwest::Method::DELETE,
+            resource,
+            url_params,
+            vec![],
+            id,
+        )
+        .map(|_| ())
     }
 
     pub fn users(&self) -> Resource<User> {
-        Resource::new(self.clone())
+        Resource::new(self.clone(), UrlParams::default())
     }
 
     pub fn classes(&self) -> Resource<Class> {
-        Resource::new(self.clone())
+        Resource::new(self.clone(), UrlParams::default())
     }
 
     pub fn namespaces(&self) -> Resource<Namespace> {
-        Resource::new(self.clone())
+        Resource::new(self.clone(), UrlParams::default())
     }
 
     pub fn groups(&self) -> Resource<Group> {
-        Resource::new(self.clone())
+        Resource::new(self.clone(), UrlParams::default())
+    }
+
+    pub fn class_relations(&self, class_id: i32) -> Resource<ClassRelation> {
+        Resource::new(self.clone(), vec![("class_id", class_id.to_string())])
+    }
+
+    pub fn objects(&self, class_id: i32) -> Resource<Object> {
+        Resource::new(self.clone(), vec![("class_id", class_id.to_string())])
     }
 }
 
 pub struct FilterBuilder<T: ApiResource> {
     client: Client<Authenticated>,
     filters: Vec<(String, FilterOperator, String)>,
+    url_params: UrlParams,
     _phantom: PhantomData<T>,
 }
 
 impl<T: ApiResource> FilterBuilder<T> {
-    fn new(client: Client<Authenticated>) -> Self {
+    fn new(client: Client<Authenticated>, url_params: UrlParams) -> Self {
         FilterBuilder {
             client,
+            url_params,
             filters: Vec::new(),
             _phantom: PhantomData,
         }
@@ -275,25 +320,38 @@ impl<T: ApiResource> FilterBuilder<T> {
 
     pub fn execute(self) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = T::build_params(self.filters);
-        self.client.search::<T>(T::default(), params)
+        self.client
+            .search::<T>(T::default(), self.url_params, params)
     }
 }
 
 pub struct Resource<T: ApiResource> {
     client: Client<Authenticated>,
+    url_params: UrlParams,
     _phantom: PhantomData<T>,
 }
 
 impl<T: ApiResource> Resource<T> {
-    fn new(client: Client<Authenticated>) -> Self {
-        Resource {
+    fn new<I, K, V>(client: Client<Authenticated>, url_params: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<Cow<'static, str>>,
+        V: Into<Cow<'static, str>>,
+    {
+        let resource = Resource {
             client,
+            url_params: url_params
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
             _phantom: PhantomData,
-        }
+        };
+
+        resource
     }
 
     pub fn find(&self) -> FilterBuilder<T> {
-        FilterBuilder::new(self.client.clone())
+        FilterBuilder::new(self.client.clone(), self.url_params.clone())
     }
 
     pub fn filter(
@@ -301,7 +359,8 @@ impl<T: ApiResource> Resource<T> {
         filter: impl IntoResourceFilter<T>,
     ) -> Result<Vec<T::GetOutput>, ApiError> {
         let params = filter.into_resource_filter();
-        self.client.search::<T>(T::default(), params)
+        self.client
+            .search::<T>(T::default(), self.url_params.clone(), params)
     }
 
     pub fn filter_expecting_single_result(
@@ -309,27 +368,25 @@ impl<T: ApiResource> Resource<T> {
         filter: impl IntoResourceFilter<T>,
     ) -> Result<T::GetOutput, ApiError> {
         let params = filter.into_resource_filter();
-        one_or_err(self.client.search::<T>(T::default(), params)?)
+        one_or_err(
+            self.client
+                .search::<T>(T::default(), self.url_params.clone(), params)?,
+        )
     }
 
     pub fn create(&self, params: T::PostParams) -> Result<T::PostOutput, ApiError> {
-        self.client.post::<T>(T::default(), params)
+        self.client
+            .post::<T>(T::default(), self.url_params.clone(), params)
     }
 
     pub fn update(&self, id: i32, params: T::PatchParams) -> Result<T::PatchOutput, ApiError> {
-        self.client.patch::<T>(T::default(), id, params)
+        self.client
+            .patch::<T>(T::default(), id, self.url_params.clone(), params)
     }
 
     pub fn delete(&self, id: i32) -> Result<(), ApiError> {
-        self.client.delete::<T>(T::default(), id)
-    }
-}
-
-impl Resource<Class> {
-    pub fn get_by_name(&self, name: &str) -> Result<Class, ApiError> {
-        self.find()
-            .add_filter_name_exact(name)
-            .execute_expecting_single_result()
+        self.client
+            .delete::<T>(T::default(), id, self.url_params.clone())
     }
 }
 
@@ -371,7 +428,7 @@ mod test {
         let client = Client::new(base_url.clone());
 
         assert_eq!(
-            client.build_url(&endpoint),
+            client.build_url(&endpoint, UrlParams::default()),
             format!(
                 "{}{}",
                 base_url.with_trailing_slash(),

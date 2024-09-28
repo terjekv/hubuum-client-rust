@@ -2,7 +2,7 @@ use log::trace;
 use serde_urlencoded;
 use std::marker::PhantomData;
 
-use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated};
+use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated, UrlParams};
 use crate::endpoints::Endpoint;
 use crate::errors::ApiError;
 use crate::resources::ApiResource;
@@ -18,7 +18,7 @@ pub struct Client<S> {
 }
 
 impl<S> ClientCore for Client<S> {
-    fn build_url(&self, endpoint: &Endpoint) -> String {
+    fn build_url(&self, endpoint: &Endpoint, _url_params: UrlParams) -> String {
         format!(
             "{}{}",
             self.base_url.with_trailing_slash(),
@@ -41,7 +41,7 @@ impl Client<Unauthenticated> {
     pub async fn login(self, credentials: Credentials) -> Result<Client<Authenticated>, ApiError> {
         let token: Token = self
             .http_client
-            .post(&self.build_url(&Endpoint::Login))
+            .post(&self.build_url(&Endpoint::Login, UrlParams::default()))
             .json(&credentials)
             .send()
             .await?
@@ -59,7 +59,7 @@ impl Client<Unauthenticated> {
     pub async fn login_with_token(self, token: Token) -> Result<Client<Authenticated>, ApiError> {
         let status = self
             .http_client
-            .get(self.build_url(&Endpoint::LoginWithToken))
+            .get(self.build_url(&Endpoint::LoginWithToken, UrlParams::default()))
             .header("Authorization", format!("Bearer {}", token.token))
             .send()
             .await?;
@@ -87,7 +87,7 @@ impl Client<Authenticated> {
         params: R::GetParams,
     ) -> Result<Vec<R::GetOutput>, ApiError> {
         let endpoint = resource.endpoint();
-        let url = self.build_url(&endpoint);
+        let url = self.build_url(&endpoint, UrlParams::default());
 
         let query = serde_urlencoded::to_string(&params)?;
         let url = if !query.is_empty() {
@@ -119,7 +119,11 @@ impl Client<Authenticated> {
         let endpoint = resource.endpoint();
         let params = serde_urlencoded::to_string(&params)?;
 
-        let url = format!("{}?{}", self.build_url(&endpoint), params);
+        let url = format!(
+            "{}?{}",
+            self.build_url(&endpoint, UrlParams::default()),
+            params
+        );
 
         trace!("GET {}", url);
 
@@ -142,7 +146,7 @@ impl Client<Authenticated> {
         params: R::PostParams,
     ) -> Result<R::PostOutput, ApiError> {
         let endpoint = resource.endpoint();
-        let url = self.build_url(&endpoint);
+        let url = self.build_url(&endpoint, UrlParams::default());
 
         trace!("POST {} with {:?}", &url, params);
 
@@ -167,7 +171,7 @@ impl Client<Authenticated> {
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
         let endpoint = resource.endpoint();
-        let url = format!("{}/{}", self.build_url(&endpoint), id);
+        let url = format!("{}/{}", self.build_url(&endpoint, UrlParams::default()), id);
 
         trace!("PATCH {} with {:?}", &url, params);
 
@@ -191,7 +195,7 @@ impl Client<Authenticated> {
         id: i32,
     ) -> Result<R::DeleteOutput, ApiError> {
         let endpoint = resource.endpoint();
-        let url = format!("{}/{}", self.build_url(&endpoint), id);
+        let url = format!("{}/{}", self.build_url(&endpoint, UrlParams::default()), id);
 
         trace!("DELETE {}", &url);
 

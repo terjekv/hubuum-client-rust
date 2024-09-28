@@ -8,7 +8,7 @@ pub enum Endpoint {
     Classes,
     Namespaces,
     // ... other endpoints
-    ObjectsInClass,
+    Objects,
 
     ClassRelations,
     ClassRelationsTransitive,
@@ -28,7 +28,7 @@ impl Endpoint {
             Endpoint::Classes => "/api/v1/classes/",
             Endpoint::Namespaces => "/api/v1/namespaces/",
 
-            Endpoint::ObjectsInClass => "/api/v1/classes/{class_id}/",
+            Endpoint::Objects => "/api/v1/classes/{class_id}/",
 
             Endpoint::ClassRelations => "/api/v1/classes/{class_id}/relations/",
             Endpoint::ClassRelationsTransitive => {

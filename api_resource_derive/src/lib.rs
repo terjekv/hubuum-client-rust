@@ -78,13 +78,6 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
             #patch_fields
         }
 
-        fn display_option<T: std::fmt::Debug>(o: &Option<T>) -> String {
-            match o {
-                Some(s) => format!("{:?}", s),
-                None => format!("<null>"),
-            }
-        }
-
         impl std::fmt::Display for #name {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(f, "{}", self.id)
@@ -208,7 +201,7 @@ fn process_fields(
         if !is_post_only {
             if is_optional {
                 main_fields.extend(quote! {
-                    #[tabled(display_with = "display_option")]
+                    #[tabled(display_with = "crate::resources::display_option")]
                     pub #name: Option<#ty>,
                 });
             } else {

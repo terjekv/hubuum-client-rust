@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::endpoints::Endpoint;
 use crate::QueryFilter;
 
@@ -9,8 +11,10 @@ pub use self::sync::Client as SyncClient;
 
 use crate::resources::ApiResource;
 
+pub type UrlParams = Vec<(Cow<'static, str>, Cow<'static, str>)>;
+
 trait ClientCore {
-    fn build_url(&self, endpoint: &Endpoint) -> String;
+    fn build_url(&self, endpoint: &Endpoint, url_params: UrlParams) -> String;
 }
 
 pub trait IntoResourceFilter<T: ApiResource> {
