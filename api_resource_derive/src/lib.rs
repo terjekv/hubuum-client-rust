@@ -191,6 +191,34 @@ fn process_fields(
             false
         });
 
+        let rename = field
+            .attrs
+            .iter()
+            .find_map(|attr| {
+                if attr.path().is_ident("api") {
+                    if let Meta::List(list) = &attr.meta {
+                        if let Ok(nested) =
+                            list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+                        {
+                            return nested.iter().find_map(|meta| {
+                                if let Meta::NameValue(name_value) = meta {
+                                    if name_value.path.is_ident("list_rename") {
+                                        if let syn::Expr::Lit(expr_lit) = &name_value.value {
+                                            if let syn::Lit::Str(lit) = &expr_lit.lit {
+                                                return Some(lit.value());
+                                            }
+                                        }
+                                    }
+                                }
+                                None
+                            });
+                        }
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| name.as_ref().unwrap().to_string());
+
         let id_field_name = if is_as_id {
             format!("{}_id", name.as_ref().unwrap().to_string())
         } else {
@@ -201,11 +229,14 @@ fn process_fields(
         if !is_post_only {
             if is_optional {
                 main_fields.extend(quote! {
-                    #[tabled(display_with = "crate::resources::display_option")]
+                    #[tabled(display_with = "crate::resources::tabled_display_option", rename = #rename)]
                     pub #name: Option<#ty>,
                 });
             } else {
-                main_fields.extend(quote! { pub #name: #ty, });
+                main_fields.extend(quote! {
+                    #[tabled(display_with = "crate::resources::tabled_display", rename = #rename)]
+                    pub #name: #ty,
+                });
             }
             get_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
         }
