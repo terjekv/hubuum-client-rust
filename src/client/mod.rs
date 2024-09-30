@@ -13,6 +13,10 @@ use crate::resources::ApiResource;
 
 pub type UrlParams = Vec<(Cow<'static, str>, Cow<'static, str>)>;
 
+pub trait GetID {
+    fn id(&self) -> i32;
+}
+
 trait ClientCore {
     fn build_url(&self, endpoint: &Endpoint, url_params: UrlParams) -> String;
 }

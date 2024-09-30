@@ -62,6 +62,12 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
             #main_fields
         }
 
+        impl crate::client::GetID for #name {
+            fn id(&self) -> i32 {
+                self.id
+            }
+        }
+
         #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq)]
         pub struct #get_name {
             #get_fields
