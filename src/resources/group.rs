@@ -5,12 +5,12 @@ use api_resource_derive::ApiResource;
 pub struct GroupResource {
     #[api(read_only)]
     pub id: i32,
-    #[api(list_rename = "Name")]
+    #[api(table_rename = "Name")]
     pub groupname: String,
-    #[api(list_rename = "Description")]
+    #[api(table_rename = "Description")]
     pub description: String,
-    #[api(read_only, list_rename = "Created")]
+    #[api(read_only, table_rename = "Created")]
     pub created_at: chrono::NaiveDateTime,
-    #[api(read_only, list_rename = "Updated")]
+    #[api(read_only, table_rename = "Updated")]
     pub updated_at: chrono::NaiveDateTime,
 }

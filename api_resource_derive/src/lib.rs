@@ -19,7 +19,6 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Meta};
 
 use syn::punctuated::Punctuated;
-use syn::token::Comma;
 
 fn pluralize(name: &syn::Ident) -> String {
     let name = name.to_string();
@@ -115,8 +114,51 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+fn has_attribute(field: &syn::Field, attr_name: &str) -> bool {
+    field.attrs.iter().any(|attr| {
+        if attr.path().is_ident("api") {
+            if let Meta::List(list) = &attr.meta {
+                if let Ok(nested) =
+                    list.parse_args_with(Punctuated::<Meta, syn::Token![,]>::parse_terminated)
+                {
+                    return nested
+                        .iter()
+                        .any(|meta| matches!(meta, Meta::Path(path) if path.is_ident(attr_name)));
+                }
+            }
+        }
+        false
+    })
+}
+
+fn get_rename_value(field: &syn::Field) -> Option<String> {
+    field.attrs.iter().find_map(|attr| {
+        if attr.path().is_ident("api") {
+            if let Meta::List(list) = &attr.meta {
+                if let Ok(nested) =
+                    list.parse_args_with(Punctuated::<Meta, syn::Token![,]>::parse_terminated)
+                {
+                    return nested.iter().find_map(|meta| {
+                        if let Meta::NameValue(name_value) = meta {
+                            if name_value.path.is_ident("table_rename") {
+                                if let syn::Expr::Lit(expr_lit) = &name_value.value {
+                                    if let syn::Lit::Str(lit) = &expr_lit.lit {
+                                        return Some(lit.value());
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    });
+                }
+            }
+        }
+        None
+    })
+}
+
 fn process_fields(
-    fields: &Punctuated<syn::Field, Comma>,
+    fields: &Punctuated<syn::Field, syn::Token![,]>,
 ) -> (
     proc_macro2::TokenStream,
     proc_macro2::TokenStream,
@@ -130,114 +172,40 @@ fn process_fields(
 
     for field in fields {
         let name = &field.ident;
+        let fieldname = name.as_ref().unwrap().to_string();
         let ty = &field.ty;
-        let is_read_only = field.attrs.iter().any(|attr| {
-            if attr.path().is_ident("api") {
-                if let Meta::List(list) = &attr.meta {
-                    if let Ok(nested) =
-                        list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
-                    {
-                        return nested.iter().any(
-                            |meta| matches!(meta, Meta::Path(path) if path.is_ident("read_only")),
-                        );
-                    }
-                }
-            }
-            false
-        });
 
-        let is_post_only = field.attrs.iter().any(|attr| {
-            if attr.path().is_ident("api") {
-                if let Meta::List(list) = &attr.meta {
-                    if let Ok(nested) =
-                        list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
-                    {
-                        return nested.iter().any(
-                            |meta| matches!(meta, Meta::Path(path) if path.is_ident("post_only")),
-                        );
-                    }
-                }
-            }
-            false
-        });
+        let is_read_only = has_attribute(field, "read_only");
+        let is_post_only = has_attribute(field, "post_only");
+        let is_optional = has_attribute(field, "optional");
+        let is_as_id = has_attribute(field, "as_id");
 
-        let is_optional = field.attrs.iter().any(|attr| {
-            if attr.path().is_ident("api") {
-                if let Meta::List(list) = &attr.meta {
-                    if let Ok(nested) =
-                        list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
-                    {
-                        return nested.iter().any(
-                            |meta| matches!(meta, Meta::Path(path) if path.is_ident("optional")),
-                        );
-                    }
-                }
-            }
-            false
-        });
-
-        let is_as_id = field.attrs.iter().any(|attr| {
-            if attr.path().is_ident("api") {
-                if let Meta::List(list) = &attr.meta {
-                    if let Ok(nested) =
-                        list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
-                    {
-                        return nested.iter().any(
-                            |meta| matches!(meta, Meta::Path(path) if path.is_ident("as_id")),
-                        );
-                    }
-                }
-            }
-            false
-        });
-
-        let rename = field
-            .attrs
-            .iter()
-            .find_map(|attr| {
-                if attr.path().is_ident("api") {
-                    if let Meta::List(list) = &attr.meta {
-                        if let Ok(nested) =
-                            list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
-                        {
-                            return nested.iter().find_map(|meta| {
-                                if let Meta::NameValue(name_value) = meta {
-                                    if name_value.path.is_ident("list_rename") {
-                                        if let syn::Expr::Lit(expr_lit) = &name_value.value {
-                                            if let syn::Lit::Str(lit) = &expr_lit.lit {
-                                                return Some(lit.value());
-                                            }
-                                        }
-                                    }
-                                }
-                                None
-                            });
-                        }
-                    }
-                }
-                None
-            })
-            .unwrap_or_else(|| name.as_ref().unwrap().to_string());
+        let rename = get_rename_value(field).unwrap_or_else(|| fieldname.clone());
 
         let id_field_name = if is_as_id {
-            format!("{}_id", name.as_ref().unwrap().to_string())
+            format!("{}_id", fieldname)
         } else {
-            name.as_ref().unwrap().to_string()
+            fieldname.clone()
         };
         let id_field_ident = syn::Ident::new(&id_field_name, proc_macro2::Span::call_site());
 
         if !is_post_only {
-            if is_optional {
-                main_fields.extend(quote! {
+            let tabled_attr = if is_optional {
+                quote!(
                     #[tabled(display_with = "crate::resources::tabled_display_option", rename = #rename)]
                     pub #name: Option<#ty>,
-                });
+                )
             } else {
-                main_fields.extend(quote! {
+                quote!(
                     #[tabled(display_with = "crate::resources::tabled_display", rename = #rename)]
                     pub #name: #ty,
-                });
-            }
+                )
+            };
+
+            main_fields.extend(quote! {
+                #tabled_attr
+            });
+
             get_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
         }
 
@@ -254,11 +222,12 @@ fn process_fields(
                 post_fields.extend(quote! { pub #id_field_ident: #id_type, });
             } else {
                 patch_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
-                if !is_optional {
-                    post_fields.extend(quote! { pub #id_field_ident: #ty, });
+                let post_type = if is_optional {
+                    quote!(Option<#ty>)
                 } else {
-                    post_fields.extend(quote! { pub #id_field_ident: Option<#ty>, });
-                }
+                    quote!(#ty)
+                };
+                post_fields.extend(quote! { pub #id_field_ident: #post_type, });
             }
         }
     }
