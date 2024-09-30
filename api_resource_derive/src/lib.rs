@@ -56,6 +56,29 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
     let patch_name = format_ident!("{}Patch", name);
     let endpoint = format_ident!("{}", plural_name);
 
+    // List of field names to check for Display implementation, in order of preference
+    let display_field_options = &[
+        format_ident!("name"),
+        format_ident!("user"),
+        format_ident!("username"),
+        format_ident!("id"),
+    ];
+
+    // Find the first matching field from the options
+    let display_field = display_field_options
+        .iter()
+        .find(|&field| fields.iter().any(|f| f.ident.as_ref() == Some(&field)))
+        .unwrap();
+
+    // Generate the Display implementation
+    let display_impl = quote! {
+        impl std::fmt::Display for #name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.#display_field)
+            }
+        }
+    };
+
     let expanded = quote! {
         #[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, tabled::Tabled)]
         pub struct #name {
@@ -83,11 +106,7 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
             #patch_fields
         }
 
-        impl std::fmt::Display for #name {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(f, "{}", self.id)
-            }
-        }
+        #display_impl
 
         impl crate::resources::ApiResource for #name {
             type GetParams = #get_name;

@@ -310,6 +310,10 @@ impl<T: ApiResource> FilterBuilder<T> {
         self
     }
 
+    pub fn add_filter_id<V: ToString>(self, value: V) -> Self {
+        self.add_filter("id", FilterOperator::Equals { is_negated: false }, value)
+    }
+
     pub fn add_filter_name_exact<V: ToString>(self, value: V) -> Self {
         self.add_filter("name", FilterOperator::Equals { is_negated: false }, value)
     }
