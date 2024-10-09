@@ -29,9 +29,9 @@ pub struct ClassRelationResource {
     #[api(read_only)]
     pub id: i32,
     #[api(table_rename = "FromClass")]
-    pub from_class_id: i32,
+    pub from_hubuum_class_id: i32,
     #[api(table_rename = "ToClass")]
-    pub to_class_id: i32,
+    pub to_hubuum_class_id: i32,
     #[api(read_only, table_rename = "Created")]
     pub created_at: chrono::NaiveDateTime,
     #[api(read_only, table_rename = "Updated")]

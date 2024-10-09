@@ -11,10 +11,6 @@ pub enum Endpoint {
     Objects,
 
     ClassRelations,
-    ClassRelationsTransitive,
-    ClassRelationsTransitiveToClass,
-
-    ObjectRelation,
     ObjectRelations,
 }
 
@@ -30,19 +26,8 @@ impl Endpoint {
 
             Endpoint::Objects => "/api/v1/classes/{class_id}/",
 
-            Endpoint::ClassRelations => "/api/v1/classes/{class_id}/relations/",
-            Endpoint::ClassRelationsTransitive => {
-                "/api/v1/classes/{class_id}/relations/transitive/"
-            }
-            Endpoint::ClassRelationsTransitiveToClass => {
-                "/api/v1/classes/{class_id}/relations/transitive/class/{to_class_id}/"
-            }
-
-            Endpoint::ObjectRelations => "/api/v1/classes/{class_id}/{from_object_id}/relations/",
-
-            Endpoint::ObjectRelation => {
-                "/api/v1/classes/{class_id}/{from_object_id}/relations/{to_class_id}/{to_object_id}"
-            }
+            Endpoint::ClassRelations => "/api/v1/relations/classes/",
+            Endpoint::ObjectRelations => "/api/v1/relations/objects/",
         }
     }
 

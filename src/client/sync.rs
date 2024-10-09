@@ -11,7 +11,7 @@ use crate::endpoints::Endpoint;
 use crate::errors::ApiError;
 use crate::resources::{ApiResource, Class, ClassRelation, Group, Namespace, Object, User};
 use crate::types::{BaseUrl, Credentials, FilterOperator, Token};
-use crate::QueryFilter;
+use crate::{ObjectRelation, QueryFilter};
 
 #[derive(Deserialize, Debug)]
 struct DeleteResponse;
@@ -278,12 +278,16 @@ impl Client<Authenticated> {
         Resource::new(self.clone(), UrlParams::default())
     }
 
-    pub fn class_relations(&self, class_id: i32) -> Resource<ClassRelation> {
+    pub fn objects(&self, class_id: i32) -> Resource<Object> {
         Resource::new(self.clone(), vec![("class_id", class_id.to_string())])
     }
 
-    pub fn objects(&self, class_id: i32) -> Resource<Object> {
-        Resource::new(self.clone(), vec![("class_id", class_id.to_string())])
+    pub fn class_relation(&self) -> Resource<ClassRelation> {
+        Resource::new(self.clone(), UrlParams::default())
+    }
+
+    pub fn object_relation(&self) -> Resource<ObjectRelation> {
+        Resource::new(self.clone(), UrlParams::default())
     }
 }
 
@@ -310,12 +314,16 @@ impl<T: ApiResource> FilterBuilder<T> {
         self
     }
 
+    pub fn add_filter_equals<V: ToString>(self, field: &str, value: V) -> Self {
+        self.add_filter(field, FilterOperator::Equals { is_negated: false }, value)
+    }
+
     pub fn add_filter_id<V: ToString>(self, value: V) -> Self {
-        self.add_filter("id", FilterOperator::Equals { is_negated: false }, value)
+        self.add_filter_equals("id", value)
     }
 
     pub fn add_filter_name_exact<V: ToString>(self, value: V) -> Self {
-        self.add_filter("name", FilterOperator::Equals { is_negated: false }, value)
+        self.add_filter_equals("name", value)
     }
 
     pub fn execute_expecting_single_result(self) -> Result<T::GetOutput, ApiError> {

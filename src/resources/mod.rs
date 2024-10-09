@@ -14,7 +14,10 @@ pub use self::class::{
 };
 pub use self::group::{Group, GroupGet, GroupPatch, GroupPost};
 pub use self::namespace::{Namespace, NamespaceGet, NamespacePatch, NamespacePost};
-pub use self::object::{Object, ObjectGet, ObjectPatch, ObjectPost};
+pub use self::object::{
+    Object, ObjectGet, ObjectPatch, ObjectPost, ObjectRelation, ObjectRelationGet,
+    ObjectRelationPatch, ObjectRelationPost,
+};
 pub use self::user::{User, UserGet, UserPatch, UserPost};
 pub use crate::types::{FilterOperator, QueryFilter};
 

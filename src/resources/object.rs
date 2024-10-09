@@ -20,3 +20,20 @@ pub struct ObjectResource {
     #[api(read_only, table_rename = "Updated")]
     pub updated_at: chrono::NaiveDateTime,
 }
+
+#[allow(dead_code)]
+#[derive(ApiResource)]
+pub struct ObjectRelationResource {
+    #[api(read_only)]
+    pub id: i32,
+    #[api(table_rename = "FromObject")]
+    pub from_hubuum_object_id: i32,
+    #[api(table_rename = "ToObject")]
+    pub to_hubuum_object_id: i32,
+    #[api(table_rename = "Relation")]
+    pub class_relation_id: i32,
+    #[api(read_only, table_rename = "Created")]
+    pub created_at: chrono::NaiveDateTime,
+    #[api(read_only, table_rename = "Updated")]
+    pub updated_at: chrono::NaiveDateTime,
+}
