@@ -1,4 +1,4 @@
-use log::{error, trace};
+use log::{debug, error, trace};
 use reqwest::blocking::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -126,7 +126,7 @@ impl Client<Authenticated> {
         post_params: T,
     ) -> Result<Option<U>, ApiError> {
         let endpoint = resource.endpoint();
-        let url = self.build_url(&endpoint, url_params);
+        let url = self.build_url(&endpoint, url_params.clone());
 
         let request = match method {
             reqwest::Method::GET => {
@@ -137,20 +137,26 @@ impl Client<Authenticated> {
                 } else {
                     url
                 };
-                trace!("GET {}", url);
+                debug!("GET {}", url);
                 self.http_client.get(&url)
             }
             reqwest::Method::POST => {
-                trace!("POST {} with {:?}", &url, post_params);
+                debug!("POST {} with {:?}", &url, post_params);
                 self.http_client.post(&url).json(&post_params)
             }
             reqwest::Method::PATCH => {
-                trace!("PATCH {} with {:?}", &url, post_params);
+                let id = url_params
+                    .iter()
+                    .find(|(k, _)| k == "patch_id")
+                    .map(|(_, v)| v)
+                    .ok_or(ApiError::MissingUrlIdentifier)?;
+                let url = format!("{}{}", url, id);
+                debug!("PATCH {} with {:?}", &url, post_params);
                 self.http_client.patch(&url).json(&post_params)
             }
             reqwest::Method::DELETE => {
                 let url = format!("{}{:?}", url, post_params);
-                trace!("DELETE {}", &url);
+                debug!("DELETE {}", &url);
                 self.http_client.delete(&url)
             }
             _ => return Err(ApiError::UnsupportedHttpOperation(method.to_string())),
@@ -161,7 +167,7 @@ impl Client<Authenticated> {
         let response = request.send()?;
         trace!("Request took {:?}", now.elapsed());
         let response_text = self.check_success(response)?.text()?;
-        trace!("Response: {}", response_text);
+        debug!("Response: {}", response_text);
 
         if method == reqwest::Method::DELETE {
             if response_text.is_empty() {
@@ -236,14 +242,10 @@ impl Client<Authenticated> {
         url_params: UrlParams,
         params: R::PatchParams,
     ) -> Result<R::PatchOutput, ApiError> {
-        self.request(
-            reqwest::Method::PATCH,
-            resource,
-            url_params,
-            vec![],
-            (id, params),
-        )
-        .and_then(|opt| opt.ok_or(ApiError::EmptyResult("PATCH returned empty result".into())))
+        let mut url_params = url_params;
+        url_params.push(("patch_id".into(), id.to_string().into()));
+        self.request(reqwest::Method::PATCH, resource, url_params, vec![], params)
+            .and_then(|opt| opt.ok_or(ApiError::EmptyResult("PATCH returned empty result".into())))
     }
 
     pub fn delete<R: ApiResource>(

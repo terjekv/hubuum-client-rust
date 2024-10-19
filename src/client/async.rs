@@ -1,4 +1,4 @@
-use log::trace;
+use log::debug;
 use serde_urlencoded;
 use std::marker::PhantomData;
 
@@ -96,7 +96,7 @@ impl Client<Authenticated> {
             url
         };
 
-        trace!("GET {}", url);
+        debug!("GET {}", url);
 
         let response = self
             .http_client
@@ -106,7 +106,7 @@ impl Client<Authenticated> {
             .await?
             .error_for_status()?;
 
-        trace!("Response: {:?}", response);
+        debug!("Response: {:?}", response);
         let obj: Vec<R::GetOutput> = response.json().await?;
         Ok(obj)
     }
@@ -125,7 +125,7 @@ impl Client<Authenticated> {
             params
         );
 
-        trace!("GET {}", url);
+        debug!("GET {}", url);
 
         let response = self
             .http_client
@@ -135,7 +135,7 @@ impl Client<Authenticated> {
             .await?
             .error_for_status()?;
 
-        trace!("Response: {:?}", response);
+        debug!("Response: {:?}", response);
         let obj: Vec<R::GetOutput> = response.json().await?;
         Ok(obj)
     }
@@ -148,7 +148,7 @@ impl Client<Authenticated> {
         let endpoint = resource.endpoint();
         let url = self.build_url(&endpoint, UrlParams::default());
 
-        trace!("POST {} with {:?}", &url, params);
+        debug!("POST {} with {:?}", &url, params);
 
         let response = self
             .http_client
@@ -159,7 +159,7 @@ impl Client<Authenticated> {
             .await?
             .error_for_status()?;
 
-        trace!("Response: {:?}", response);
+        debug!("Response: {:?}", response);
         let obj: R::PostOutput = response.json().await?;
         Ok(obj)
     }
@@ -173,7 +173,7 @@ impl Client<Authenticated> {
         let endpoint = resource.endpoint();
         let url = format!("{}/{}", self.build_url(&endpoint, UrlParams::default()), id);
 
-        trace!("PATCH {} with {:?}", &url, params);
+        debug!("PATCH {} with {:?}", &url, params);
 
         let response = self
             .http_client
@@ -184,7 +184,7 @@ impl Client<Authenticated> {
             .await?
             .error_for_status()?;
 
-        trace!("Response: {:?}", response);
+        debug!("Response: {:?}", response);
         let obj: R::PatchOutput = response.json().await?;
         Ok(obj)
     }
@@ -197,7 +197,7 @@ impl Client<Authenticated> {
         let endpoint = resource.endpoint();
         let url = format!("{}/{}", self.build_url(&endpoint, UrlParams::default()), id);
 
-        trace!("DELETE {}", &url);
+        debug!("DELETE {}", &url);
 
         let response = self
             .http_client
@@ -207,7 +207,7 @@ impl Client<Authenticated> {
             .await?
             .error_for_status()?;
 
-        trace!("Response: {:?}", response);
+        debug!("Response: {:?}", response);
         let obj: R::DeleteOutput = response.json().await?;
         Ok(obj)
     }

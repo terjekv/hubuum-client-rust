@@ -44,4 +44,7 @@ pub enum ApiError {
 
     #[error("Too many results: {0}")]
     TooManyResults(String),
+
+    #[error("Missing URL identifier")]
+    MissingUrlIdentifier,
 }
