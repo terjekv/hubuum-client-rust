@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 // FilterOperator enum
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum FilterOperator {
     Equals { is_negated: bool },
     IEquals { is_negated: bool },
@@ -151,7 +151,7 @@ impl std::fmt::Display for FilterOperator {
 }
 
 pub trait IntoQueryTuples {
-    fn into_tuples(&self) -> Vec<(String, String)>;
+    fn into_tuples(&self) -> Vec<(String, String, String)>;
     fn into_query_string(&self) -> String;
 }
 
@@ -159,23 +159,24 @@ pub trait IntoQueryTuples {
 pub struct QueryFilter {
     pub key: String,
     pub value: String,
+    pub operator: FilterOperator,
 }
 
 impl std::fmt::Display for QueryFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}={}", self.key, self.value)
+        write!(f, "{}_{}={}", self.key, self.operator, self.value)
     }
 }
 
 impl QueryFilter {
-    pub fn into_tuples(&self) -> (String, String) {
+    pub fn into_tuples(&self) -> (String, String, String) {
         let encoded_value = self.value.clone().replace(" ", "%20");
-        (self.key.clone(), encoded_value)
+        (self.key.clone(), self.operator.to_string(), encoded_value)
     }
 }
 
 impl IntoQueryTuples for Vec<QueryFilter> {
-    fn into_tuples(&self) -> Vec<(String, String)> {
+    fn into_tuples(&self) -> Vec<(String, String, String)> {
         self.iter().map(|filter| filter.into_tuples()).collect()
     }
 
@@ -183,7 +184,7 @@ impl IntoQueryTuples for Vec<QueryFilter> {
         let tuples = self.into_tuples();
         let query_string = tuples
             .iter()
-            .map(|(key, value)| format!("{}={}", key, value))
+            .map(|(key, operator, value)| format!("{}__{}={}", key, operator, value))
             .collect::<Vec<String>>()
             .join("&");
         query_string

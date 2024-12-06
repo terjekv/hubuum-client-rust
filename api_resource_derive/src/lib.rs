@@ -124,11 +124,12 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
 
             fn build_params(filters: Vec<(String, crate::types::FilterOperator, String)>) -> Vec<crate::types::QueryFilter> {
                 let mut queries = vec![];
-                for (field, op, value) in filters {
-                    let key = format!("{}__{}", field, op);
+                for (field, operator, value) in filters {
+                    let key = format!("{}__{}", field, operator);
                     queries.push(crate::types::QueryFilter {
                         key,
                         value,
+                        operator,
                     });
                 }
                 queries
