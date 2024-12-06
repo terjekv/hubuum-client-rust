@@ -182,13 +182,11 @@ impl IntoQueryTuples for Vec<QueryFilter> {
 
     fn into_query_string(&self) -> String {
         let tuples = self.into_tuples();
-        println!("Tuples: {:?}", tuples);
         let query_string = tuples
             .iter()
             .map(|(key, operator, value)| format!("{}__{}={}", key, operator, value))
             .collect::<Vec<String>>()
             .join("&");
-        println!("Query string: {}", query_string);
         query_string
     }
 }
