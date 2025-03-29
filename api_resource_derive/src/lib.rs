@@ -217,12 +217,12 @@ fn process_fields(
         if !is_post_only {
             let tabled_attr = if is_optional {
                 quote!(
-                    #[tabled(display_with = "crate::resources::tabled_display_option", rename = #rename)]
+                    #[tabled(display = "crate::resources::tabled_display_option", rename = #rename)]
                     pub #name: Option<#ty>,
                 )
             } else {
                 quote!(
-                    #[tabled(display_with = "crate::resources::tabled_display", rename = #rename)]
+                    #[tabled(display = "crate::resources::tabled_display", rename = #rename)]
                     pub #name: #ty,
                 )
             };
