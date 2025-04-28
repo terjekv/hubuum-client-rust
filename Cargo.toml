@@ -14,7 +14,7 @@ url = "2"
 async-trait = "0"
 serde_urlencoded = "0"
 log = "0"
-tabled = "0.18"
+tabled = "0.19"
 percent-encoding = "2"
 
 [dev-dependencies]
