@@ -5,9 +5,10 @@ pub enum Endpoint {
     LoginWithToken,
     Users,
     Groups,
+    GroupMembers,
+    GroupMembersAddRemove,
     Classes,
     Namespaces,
-    // ... other endpoints
     Objects,
 
     ClassRelations,
@@ -21,6 +22,8 @@ impl Endpoint {
             Endpoint::LoginWithToken => "/api/v0/auth/validate",
             Endpoint::Users => "/api/v1/iam/users/",
             Endpoint::Groups => "/api/v1/iam/groups/",
+            Endpoint::GroupMembers => "/api/v1/iam/groups/{group_id}/members",
+            Endpoint::GroupMembersAddRemove => "/api/v1/iam/groups/{group_id}/members/{user_id}",
             Endpoint::Classes => "/api/v1/classes/",
             Endpoint::Namespaces => "/api/v1/namespaces/",
 

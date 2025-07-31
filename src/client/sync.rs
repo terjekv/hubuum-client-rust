@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::any::type_name;
 use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::vec;
 
 use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated, UrlParams};
 use crate::endpoints::Endpoint;
@@ -16,12 +17,18 @@ use crate::{ObjectRelation, QueryFilter};
 #[derive(Deserialize, Debug)]
 struct DeleteResponse;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct EmptyPostParams;
+
+impl std::fmt::Debug for EmptyPostParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("")
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Client<S> {
-    http_client: reqwest::blocking::Client,
+    pub http_client: reqwest::blocking::Client,
     base_url: BaseUrl,
     state: S,
 }
@@ -117,15 +124,14 @@ impl Client<Authenticated> {
         &self.state.token
     }
 
-    pub fn request<R: ApiResource, T: Serialize + std::fmt::Debug, U: DeserializeOwned>(
+    pub fn request_with_endpoint<T: Serialize + std::fmt::Debug, U: DeserializeOwned>(
         &self,
         method: reqwest::Method,
-        resource: R,
+        endpoint: &Endpoint,
         url_params: UrlParams,
         query_params: Vec<QueryFilter>,
         post_params: T,
     ) -> Result<Option<U>, ApiError> {
-        let endpoint = resource.endpoint();
         let url = self.build_url(&endpoint, url_params.clone());
 
         let request = match method {
@@ -166,6 +172,7 @@ impl Client<Authenticated> {
         let now = std::time::Instant::now();
         let response = request.send()?;
         trace!("Request took {:?}", now.elapsed());
+        let response_code = response.status();
         let response_text = self.check_success(response)?.text()?;
         debug!("Response: {}", response_text);
 
@@ -176,6 +183,10 @@ impl Client<Authenticated> {
                 error!("Expected empty response, got: {}", response_text);
                 return Err(ApiError::DeserializationError(response_text));
             }
+        }
+
+        if response_code == reqwest::StatusCode::NO_CONTENT {
+            return Ok(None);
         }
 
         let obj: U = match serde_json::from_str(&response_text) {
@@ -190,6 +201,23 @@ impl Client<Authenticated> {
         };
 
         Ok(Some(obj))
+    }
+
+    pub fn request<R: ApiResource, T: Serialize + std::fmt::Debug, U: DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        resource: R,
+        url_params: UrlParams,
+        query_params: Vec<QueryFilter>,
+        post_params: T,
+    ) -> Result<Option<U>, ApiError> {
+        self.request_with_endpoint(
+            method,
+            &resource.endpoint(),
+            url_params,
+            query_params,
+            post_params,
+        )
     }
 
     pub fn get<R: ApiResource>(
@@ -290,6 +318,54 @@ impl Client<Authenticated> {
 
     pub fn object_relation(&self) -> Resource<ObjectRelation> {
         Resource::new(self.clone(), UrlParams::default())
+    }
+
+    pub fn group_add_user(&self, group_id: i32, user_id: i32) -> Result<(), ApiError> {
+        let url_params = vec![
+            (Cow::Borrowed("group_id"), group_id.to_string().into()),
+            (Cow::Borrowed("user_id"), user_id.to_string().into()),
+        ];
+
+        self.request_with_endpoint::<EmptyPostParams, ()>(
+            reqwest::Method::POST,
+            &Endpoint::GroupMembersAddRemove,
+            url_params,
+            vec![],
+            EmptyPostParams {},
+        )?;
+        Ok(())
+    }
+
+    pub fn group_remove_user(&self, group_id: i32, user_id: i32) -> Result<(), ApiError> {
+        let url_params = vec![
+            (Cow::Borrowed("group_id"), group_id.to_string().into()),
+            (Cow::Borrowed("user_id"), user_id.to_string().into()),
+        ];
+
+        self.request_with_endpoint::<EmptyPostParams, ()>(
+            reqwest::Method::DELETE,
+            &Endpoint::GroupMembersAddRemove,
+            url_params,
+            vec![],
+            EmptyPostParams {},
+        )?;
+        Ok(())
+    }
+
+    pub fn group_members(&self, group_id: i32) -> Result<Vec<User>, ApiError> {
+        let url_params = vec![(Cow::Borrowed("group_id"), group_id.to_string().into())];
+        let res = self.request_with_endpoint::<EmptyPostParams, Vec<User>>(
+            reqwest::Method::GET,
+            &Endpoint::GroupMembers,
+            url_params,
+            vec![],
+            EmptyPostParams {},
+        )?;
+
+        match res {
+            None => Ok(vec![]),
+            Some(users) => Ok(users),
+        }
     }
 }
 
