@@ -1,4 +1,12 @@
+use std::borrow::Cow;
+
 use api_resource_derive::ApiResource;
+
+use crate::{
+    client::sync::{one_or_err, EmptyPostParams, Handle},
+    endpoints::Endpoint,
+    ApiError, ApiResource, FilterOperator, Object, QueryFilter,
+};
 
 use super::Namespace;
 
@@ -36,4 +44,51 @@ pub struct ClassRelationResource {
     pub created_at: chrono::NaiveDateTime,
     #[api(read_only, table_rename = "Updated")]
     pub updated_at: chrono::NaiveDateTime,
+}
+
+impl Handle<Class> {
+    pub fn objects(&self) -> Result<Vec<Handle<Object>>, ApiError> {
+        let url_params = vec![(Cow::Borrowed("class_id"), self.id().to_string().into())];
+        let raw: Vec<Object> = self.client().get(
+            Object::default(),
+            url_params,
+            vec![],
+            <Object as ApiResource>::GetParams::default(),
+        )?;
+
+        Ok(raw
+            .into_iter()
+            .map(|obj| Handle::new(self.client().clone(), obj))
+            .collect())
+    }
+
+    pub fn object_by_name(&self, name: &str) -> Result<Handle<Object>, ApiError> {
+        let url_params = vec![(Cow::Borrowed("name"), name.to_string().into())];
+        let raw: Vec<Object> = self.client().get(
+            Object::default(),
+            url_params,
+            vec![QueryFilter {
+                key: "name".to_string(),
+                value: name.to_string(),
+                operator: FilterOperator::Equals { is_negated: false },
+            }],
+            <Object as ApiResource>::GetParams::default(),
+        )?;
+
+        let got = one_or_err(raw)?;
+        let resource: Object = got.into();
+        Ok(Handle::new(self.client().clone(), resource))
+    }
+
+    pub fn delete(&self) -> Result<(), ApiError> {
+        let url_params = vec![(Cow::Borrowed("id"), self.id().to_string().into())];
+        self.client().request_with_endpoint::<EmptyPostParams, ()>(
+            reqwest::Method::DELETE,
+            &Endpoint::Classes,
+            url_params,
+            vec![],
+            EmptyPostParams {},
+        )?;
+        Ok(())
+    }
 }

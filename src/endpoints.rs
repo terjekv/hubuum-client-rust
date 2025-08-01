@@ -9,6 +9,7 @@ pub enum Endpoint {
     GroupMembersAddRemove,
     Classes,
     Namespaces,
+    NamespacePermissions,
     Objects,
 
     ClassRelations,
@@ -26,6 +27,8 @@ impl Endpoint {
             Endpoint::GroupMembersAddRemove => "/api/v1/iam/groups/{group_id}/members/{user_id}",
             Endpoint::Classes => "/api/v1/classes/",
             Endpoint::Namespaces => "/api/v1/namespaces/",
+
+            Endpoint::NamespacePermissions => "/api/v1/namespaces/{namespace_id}/permissions",
 
             Endpoint::Objects => "/api/v1/classes/{class_id}/",
 

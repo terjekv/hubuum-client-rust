@@ -4,8 +4,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::any::type_name;
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::marker::PhantomData;
 use std::vec;
+use tabled::Tabled;
 
 use super::{Authenticated, ClientCore, IntoResourceFilter, Unauthenticated, UrlParams};
 use crate::endpoints::Endpoint;
@@ -18,7 +20,7 @@ use crate::{ObjectRelation, QueryFilter};
 struct DeleteResponse;
 
 #[derive(Clone, Serialize, Deserialize)]
-struct EmptyPostParams;
+pub struct EmptyPostParams;
 
 impl std::fmt::Debug for EmptyPostParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -319,54 +321,6 @@ impl Client<Authenticated> {
     pub fn object_relation(&self) -> Resource<ObjectRelation> {
         Resource::new(self.clone(), UrlParams::default())
     }
-
-    pub fn group_add_user(&self, group_id: i32, user_id: i32) -> Result<(), ApiError> {
-        let url_params = vec![
-            (Cow::Borrowed("group_id"), group_id.to_string().into()),
-            (Cow::Borrowed("user_id"), user_id.to_string().into()),
-        ];
-
-        self.request_with_endpoint::<EmptyPostParams, ()>(
-            reqwest::Method::POST,
-            &Endpoint::GroupMembersAddRemove,
-            url_params,
-            vec![],
-            EmptyPostParams {},
-        )?;
-        Ok(())
-    }
-
-    pub fn group_remove_user(&self, group_id: i32, user_id: i32) -> Result<(), ApiError> {
-        let url_params = vec![
-            (Cow::Borrowed("group_id"), group_id.to_string().into()),
-            (Cow::Borrowed("user_id"), user_id.to_string().into()),
-        ];
-
-        self.request_with_endpoint::<EmptyPostParams, ()>(
-            reqwest::Method::DELETE,
-            &Endpoint::GroupMembersAddRemove,
-            url_params,
-            vec![],
-            EmptyPostParams {},
-        )?;
-        Ok(())
-    }
-
-    pub fn group_members(&self, group_id: i32) -> Result<Vec<User>, ApiError> {
-        let url_params = vec![(Cow::Borrowed("group_id"), group_id.to_string().into())];
-        let res = self.request_with_endpoint::<EmptyPostParams, Vec<User>>(
-            reqwest::Method::GET,
-            &Endpoint::GroupMembers,
-            url_params,
-            vec![],
-            EmptyPostParams {},
-        )?;
-
-        match res {
-            None => Ok(vec![]),
-            Some(users) => Ok(users),
-        }
-    }
 }
 
 pub struct FilterBuilder<T: ApiResource> {
@@ -400,8 +354,12 @@ impl<T: ApiResource> FilterBuilder<T> {
         self.add_filter_equals("id", value)
     }
 
+    /// Add a filter for the ideomatic `name` field.
+    ///
+    /// For most resources, this will be the `name` field, but for some it may be different.
+    /// This cloaks all `name` fields behind the resource's specific name field.
     pub fn add_filter_name_exact<V: ToString>(self, value: V) -> Self {
-        self.add_filter_equals("name", value)
+        self.add_filter_equals(T::NAME_FIELD, value)
     }
 
     pub fn execute_expecting_single_result(self) -> Result<T::GetOutput, ApiError> {
@@ -480,7 +438,7 @@ impl<T: ApiResource> Resource<T> {
     }
 }
 
-fn one_or_err<T>(mut v: Vec<T>) -> Result<T, ApiError> {
+pub fn one_or_err<T>(mut v: Vec<T>) -> Result<T, ApiError> {
     let name = type_name::<T>();
     let name = name.rsplit("::").next().unwrap_or(name);
 
@@ -494,6 +452,123 @@ fn one_or_err<T>(mut v: Vec<T>) -> Result<T, ApiError> {
             name,
             v.len()
         )))
+    }
+}
+
+pub trait GetID {
+    fn id(&self) -> i32;
+}
+
+impl GetID for Group {
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+impl GetID for Namespace {
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+impl GetID for User {
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+impl GetID for Object {
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+impl GetID for Class {
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+
+#[derive(Clone, Tabled, Serialize)]
+pub struct Handle<T>
+where
+    T: Tabled + Display,
+{
+    #[tabled(skip)]
+    #[serde(skip)]
+    client: Client<Authenticated>,
+    #[tabled(inline)]
+    #[serde(flatten)]
+    resource: T,
+}
+
+impl<T> Handle<T>
+where
+    T: ApiResource + Tabled + GetID + Display + Default,
+{
+    pub fn new(client: Client<Authenticated>, resource: T) -> Self {
+        Handle { client, resource }
+    }
+
+    pub fn resource(&self) -> &T {
+        &self.resource
+    }
+
+    pub fn id(&self) -> i32 {
+        self.resource.id()
+    }
+
+    pub fn client(&self) -> &Client<Authenticated> {
+        &self.client
+    }
+}
+
+impl<T> Resource<T>
+where
+    T: ApiResource<GetOutput = T> + Tabled + Display + GetID + Default + 'static,
+{
+    pub fn select(&self, id: i32) -> Result<Handle<T>, ApiError> {
+        let url_params = vec![(Cow::Borrowed("id"), id.to_string().into())];
+        let raw: Vec<<T as ApiResource>::GetOutput> = self.client.get(
+            T::default(),
+            url_params,
+            vec![QueryFilter {
+                key: "id".to_string(),
+                value: id.to_string(),
+                operator: FilterOperator::Equals { is_negated: false },
+            }],
+            T::GetParams::default(),
+        )?;
+
+        let got = one_or_err(raw)?;
+        let resource: T = got.into();
+        Ok(Handle {
+            client: self.client.clone(),
+            resource,
+        })
+    }
+
+    /// Select a resource by its name.
+    ///
+    /// This will use the appropriate field for the resource type.
+    ///   - Group: groupname
+    ///   - User: username
+    ///   - Everything else: name
+    pub fn select_by_name(&self, name: &str) -> Result<Handle<T>, ApiError> {
+        let url_params = vec![(Cow::Borrowed(T::NAME_FIELD), name.to_string().into())];
+        let raw: Vec<<T as ApiResource>::GetOutput> = self.client.get(
+            T::default(),
+            url_params,
+            vec![QueryFilter {
+                key: T::NAME_FIELD.to_string(),
+                value: name.to_string(),
+                operator: FilterOperator::Equals { is_negated: false },
+            }],
+            T::GetParams::default(),
+        )?;
+
+        let got = one_or_err(raw)?;
+        let resource: T = got.into();
+        Ok(Handle {
+            client: self.client.clone(),
+            resource,
+        })
     }
 }
 

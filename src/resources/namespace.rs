@@ -1,4 +1,12 @@
+use std::borrow::Cow;
+
 use api_resource_derive::ApiResource;
+
+use crate::{
+    client::sync::{EmptyPostParams, Handle},
+    endpoints::Endpoint,
+    ApiError, GroupPermissionsResult,
+};
 
 #[allow(dead_code)]
 #[derive(ApiResource)]
@@ -15,4 +23,27 @@ pub struct NamespaceResource {
     pub created_at: chrono::NaiveDateTime,
     #[api(read_only, table_rename = "Updated")]
     pub updated_at: chrono::NaiveDateTime,
+}
+
+impl Handle<Namespace> {
+    pub fn permissions(&self) -> Result<Vec<GroupPermissionsResult>, ApiError> {
+        let url_params = vec![(
+            Cow::Borrowed("namespace_id"),
+            self.resource().id.to_string().into(),
+        )];
+        let res = self
+            .client()
+            .request_with_endpoint::<EmptyPostParams, Vec<GroupPermissionsResult>>(
+                reqwest::Method::GET,
+                &Endpoint::NamespacePermissions,
+                url_params,
+                vec![],
+                EmptyPostParams {},
+            )?;
+
+        match res {
+            None => Ok(vec![]),
+            Some(users) => Ok(users),
+        }
+    }
 }

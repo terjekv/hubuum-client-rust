@@ -41,6 +41,12 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
     let name = format_ident!("{}", base_name.trim_end_matches("Resource"));
     let plural_name = format_ident!("{}", pluralize(&name));
 
+    let name_field = match base_name.trim_end_matches("Resource") {
+        "User" => format_ident!("username"),
+        "Group" => format_ident!("groupname"),
+        _ => format_ident!("name"),
+    };
+
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => &fields.named,
@@ -117,6 +123,8 @@ pub fn api_resource_derive(input: TokenStream) -> TokenStream {
             type PatchOutput = #name;
             type DeleteParams = ();
             type DeleteOutput = ();
+
+            const NAME_FIELD: &'static str = stringify!(#name_field);
 
             fn endpoint(&self) -> crate::endpoints::Endpoint {
                 crate::endpoints::Endpoint::#endpoint

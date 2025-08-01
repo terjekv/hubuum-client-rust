@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 
 mod class;
@@ -33,6 +33,8 @@ pub trait ApiResource: Default {
     type PatchOutput: DeserializeOwned + Debug;
     type DeleteParams: Serialize + Debug;
     type DeleteOutput: DeserializeOwned + Debug;
+
+    const NAME_FIELD: &'static str = "name";
 
     fn endpoint(&self) -> Endpoint;
     fn build_params(filters: Vec<(String, FilterOperator, String)>) -> Vec<QueryFilter>;
@@ -74,4 +76,48 @@ where
     }
 
     format!("{}", value)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GroupPermissionsResult {
+    pub group: GroupResult,
+    pub permission: PermissionResult,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GroupResult {
+    pub id: i32,
+    pub groupname: String,
+    pub description: String,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PermissionResult {
+    pub id: i32,
+    pub namespace_id: i32,
+    pub group_id: i32,
+    pub has_read_namespace: bool,
+    pub has_update_namespace: bool,
+    pub has_delete_namespace: bool,
+    pub has_delegate_namespace: bool,
+    pub has_create_class: bool,
+    pub has_read_class: bool,
+    pub has_update_class: bool,
+    pub has_delete_class: bool,
+    pub has_create_object: bool,
+    pub has_read_object: bool,
+    pub has_update_object: bool,
+    pub has_delete_object: bool,
+    pub has_create_class_relation: bool,
+    pub has_read_class_relation: bool,
+    pub has_update_class_relation: bool,
+    pub has_delete_class_relation: bool,
+    pub has_create_object_relation: bool,
+    pub has_read_object_relation: bool,
+    pub has_update_object_relation: bool,
+    pub has_delete_object_relation: bool,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
 }
