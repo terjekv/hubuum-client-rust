@@ -63,7 +63,10 @@ impl Handle<Class> {
     }
 
     pub fn object_by_name(&self, name: &str) -> Result<Handle<Object>, ApiError> {
-        let url_params = vec![(Cow::Borrowed("name"), name.to_string().into())];
+        let url_params = vec![
+            (Cow::Borrowed("class_id"), self.id().to_string().into()),
+            (Cow::Borrowed("name"), name.to_string().into()),
+        ];
         let raw: Vec<Object> = self.client().get(
             Object::default(),
             url_params,
